@@ -37,7 +37,9 @@ threadLoader.warmup(
 
 module.exports = (env, argv) => ({
     mode: argv.mode,
-    devtool: argv.mode === 'production' ? 'source-map' : 'eval-source-map',
+    // Production source maps expose local build paths and are not needed by
+    // the distributable Windows package.
+    devtool: argv.mode === 'production' ? false : 'eval-source-map',
     entry: {
         main: './src/index.js',
         worker: './node_modules/@stremio/stremio-core-web/worker.js'

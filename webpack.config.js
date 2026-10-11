@@ -12,7 +12,9 @@ const CopyWebpackPlugin = require('copy-webpack-plugin');
 const TerserPlugin = require('terser-webpack-plugin');
 const packageJson = require('./package.json');
 
-const COMMIT_HASH = execSync('git rev-parse HEAD').toString().trim();
+// Keep custom remote builds on their own asset URL so WebView2 and the service
+// worker cannot reuse an older bundle produced from the same upstream commit.
+const COMMIT_HASH = `${execSync('git rev-parse HEAD').toString().trim()}-phone-remote-v12`;
 
 const THREAD_LOADER = {
     loader: 'thread-loader',
@@ -222,7 +224,8 @@ module.exports = (env, argv) => ({
             SERVICE_WORKER_DISABLED: false,
             DEBUG: argv.mode !== 'production',
             VERSION: packageJson.version,
-            COMMIT_HASH
+            COMMIT_HASH,
+            REMOTE_CONTROL_SERVER_URL: ''
         }),
         new webpack.ProvidePlugin({
             Buffer: ['buffer', 'Buffer']
@@ -231,7 +234,7 @@ module.exports = (env, argv) => ({
             new WorkboxPlugin.GenerateSW({
                 maximumFileSizeToCacheInBytes: 20000000,
                 clientsClaim: true,
-                skipWaiting: false
+                skipWaiting: true
             }),
         new CopyWebpackPlugin({
             patterns: [

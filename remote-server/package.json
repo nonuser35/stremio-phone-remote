@@ -1,0 +1,11 @@
+{
+    "name": "stremio-phone-remote-server",
+    "version": "1.0.0",
+    "private": true,
+    "description": "Local-only relay between Stremio Web and a phone remote control",
+    "license": "GPL-2.0",
+    "dependencies": {
+        "qrcode-terminal": "0.12.0",
+        "ws": "8.22.0"
+    }
+}

@@ -1,0 +1,9 @@
+{
+    "name": "Stremio Phone Remote",
+    "short_name": "Stremio Remote",
+    "start_url": "/remote/",
+    "display": "standalone",
+    "background_color": "#0c0911",
+    "theme_color": "#151020",
+    "lang": "en"
+}

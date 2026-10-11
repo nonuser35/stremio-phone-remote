@@ -10,7 +10,7 @@ const { default: useRouteFocused } = require('stremio/common/useRouteFocused');
 const { useCore } = require('stremio/core');
 const { useServices, useGamepad } = require('stremio/services');
 const { useContentGamepadNavigation } = require('stremio/services/GamepadNavigation');
-const { useSettings, useProfile, useFullscreen, useBinaryState, useToast, useStreamingServer, withCoreSuspender, usePlatform, useShortcut, getKeyboardShortcutKey, getKeyboardShortcutKeys, useDiscord, EMPTY_DISCORD_TIMESTAMPS, getPlaybackDiscordActivity } = require('stremio/common');
+const { useSettings, useProfile, useFullscreen, useBinaryState, useToast, useStreamingServer, withCoreSuspender, usePlatform, useShortcut, getKeyboardShortcutKey, getKeyboardShortcutKeys, useDiscord, languages, EMPTY_DISCORD_TIMESTAMPS, getPlaybackDiscordActivity } = require('stremio/common');
 const { EPG_PLAYER_NOW_REFRESH_INTERVAL, getEpgTimeRange, useLiveRefresh } = require('stremio/common/EPG');
 const { default: toPath } = require('stremio-router/toPath');
 const { useGoBack } = require('stremio-router');
@@ -41,10 +41,140 @@ const styles = require('./styles');
 const Video = require('./Video');
 const { default: Indicator } = require('./Indicator/Indicator');
 const { default: useMediaSession } = require('./useMediaSession');
+const useRemoteControl = require('stremio/services/RemoteControl/useRemoteControl');
 
 const GAMEPAD_HANDLER_ID = 'player';
 
 const CAST_DEVICES_REFRESH_INTERVAL = 5000;
+
+const SUBTITLE_LOCALE_ALIASES = {
+    pob: 'pt-BR',
+    'br-pt': 'pt-BR',
+    'br_pt': 'pt-BR',
+};
+
+const capitalize = (value) => value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : value;
+
+const subtitleLocale = (track) => {
+    const raw = String(track.lang || '').trim();
+    const hint = `${raw} ${track.label || ''} ${track.origin || ''}`.toLowerCase();
+    const alias = SUBTITLE_LOCALE_ALIASES[raw.toLowerCase()];
+    const language = languages.find(raw) || languages.find(raw.toLowerCase());
+    const baseLanguageCode = raw.replace('_', '-').match(/^([a-z]{2,3})(?:-|$)/i)?.[1]?.toLowerCase();
+    const explicitRegion = raw.replace('_', '-').match(/^[a-z]{2,3}-([a-z]{2})$/i)?.[1]?.toUpperCase();
+    const hintedRegion = /(?:pt[-_ ]?br|brazil|brasil|brazilian|\bpob\b)/i.test(hint) ? 'BR' :
+        /(?:pt[-_ ]?pt|portugal)/i.test(hint) ? 'PT' :
+            null;
+    const hintedLanguageCode = /(?:portugu[eê]s|brazil|brasil|\bpob\b)/i.test(hint) ? 'pt' :
+        /(?:english|ingl[eê]s)/i.test(hint) ? 'en' :
+            null;
+    const code = alias || language?.alpha2 || (baseLanguageCode?.length === 2 ? baseLanguageCode : null) || hintedLanguageCode || 'und';
+
+    try {
+        const locale = new Intl.Locale(code);
+        const languageCode = locale.language === 'und' ? null : locale.language;
+        const regionCode = explicitRegion || hintedRegion || locale.maximize().region || null;
+        const displayNames = new Intl.DisplayNames(['en-US'], { type: 'language' });
+        const regionNames = new Intl.DisplayNames(['en-US'], { type: 'region' });
+        return {
+            language: capitalize(languageCode ? displayNames.of(languageCode) : null) || 'Unknown language',
+            country: regionCode ? regionNames.of(regionCode) : 'Unknown country',
+            languageCode,
+            countryCode: regionCode,
+        };
+    } catch (_) {
+        return {
+            language: capitalize(language?.label) || 'Unknown language',
+            country: 'Unknown country',
+            languageCode: language?.alpha2 || null,
+            countryCode: null,
+        };
+    }
+};
+
+const subtitleAddonName = (track, addons) => {
+    const directName = [track.addonName, track.provider, track.source]
+        .find((value) => typeof value === 'string' && value.trim() && !/^https?:/i.test(value));
+    if (directName) return directName.trim();
+
+    const origin = typeof track.origin === 'string' ? track.origin.trim() : '';
+    const trackUrl = typeof track.url === 'string' ? track.url : '';
+    const matchingAddon = (addons || []).find((addon) => {
+        const manifest = addon?.manifest || {};
+        if (origin && (origin === manifest.id || origin.toLowerCase().includes(String(manifest.name || '').toLowerCase()))) return true;
+        try {
+            return trackUrl && new URL(trackUrl).hostname === new URL(addon.transportUrl).hostname;
+        } catch (_) {
+            return false;
+        }
+    });
+    if (matchingAddon?.manifest?.name) return matchingAddon.manifest.name;
+    if (origin && !/^(embedded|local|exclusive|addon)$/i.test(origin) && !/^https?:/i.test(origin)) return origin;
+    try {
+        return trackUrl ? new URL(trackUrl).hostname.replace(/^www\./, '') : null;
+    } catch (_) {
+        return null;
+    }
+};
+
+const remoteSubtitleTrack = (track, source, index, addons) => {
+    const locale = subtitleLocale(track);
+    const addonName = source === 'external' ? subtitleAddonName(track, addons) : null;
+    const sourceLabel = source === 'embedded' ? 'Embedded' : addonName ? `Addon: ${addonName}` : 'Addon';
+    return {
+        key: `${source}:${track.id}`,
+        label: `${locale.language} — ${locale.country} · ${sourceLabel} ${index + 1}`,
+        languageCode: locale.languageCode,
+        source,
+    };
+};
+
+const addonResourceUrl = (request, videoId) => {
+    if (!request?.base || !request?.path?.type || !videoId) return null;
+    try {
+        const url = new URL(request.base);
+        url.pathname = `${url.pathname.replace(/\/?manifest\.json\/?$/i, '').replace(/\/$/, '')}/stream/${encodeURIComponent(request.path.type)}/${encodeURIComponent(videoId)}.json`;
+        return url.toString();
+    } catch (_) {
+        return null;
+    }
+};
+
+const streamIdentityMatches = (left, right) => {
+    if (!left || !right) return false;
+    if (left.infoHash && right.infoHash) {
+        return left.infoHash.toLowerCase() === right.infoHash.toLowerCase() && Number(left.fileIdx || 0) === Number(right.fileIdx || 0);
+    }
+    return ['url', 'externalUrl', 'ytId'].some((field) => left[field] && left[field] === right[field]) ||
+        (left.name === right.name && left.description === right.description);
+};
+
+const streamTraits = (stream) => {
+    const text = `${stream?.name || ''} ${stream?.description || ''}`.toLowerCase();
+    return ['2160p', '4k', '1080p', '720p', '480p', 'hdr', 'dolby vision', ' dv ', 'hevc', 'x265', 'h265', 'x264', 'h264', 'remux', 'web-dl', 'bluray']
+        .filter((trait) => text.includes(trait));
+};
+
+const selectCoherentStream = (currentStream, currentStreams, targetStreams) => {
+    if (!currentStream || !Array.isArray(targetStreams) || targetStreams.length === 0) return null;
+    const bingeGroup = currentStream.behaviorHints?.bingeGroup;
+    if (bingeGroup) {
+        const sameGroup = targetStreams.find((stream) => stream.behaviorHints?.bingeGroup === bingeGroup);
+        if (sameGroup) return sameGroup;
+    }
+
+    const currentIndex = Array.isArray(currentStreams) ? currentStreams.findIndex((stream) => streamIdentityMatches(stream, currentStream)) : -1;
+    if (currentIndex >= 0 && targetStreams[currentIndex]) return targetStreams[currentIndex];
+
+    const traits = streamTraits(currentStream);
+    const ranked = targetStreams.map((stream, index) => {
+        const candidateTraits = streamTraits(stream);
+        const score = (stream.name === currentStream.name ? 40 : 0) +
+            traits.filter((trait) => candidateTraits.includes(trait)).length * 8 - index / 1000;
+        return { stream, score };
+    }).sort((left, right) => right.score - left.score);
+    return ranked[0]?.score > 0 ? ranked[0].stream : null;
+};
 
 const Player = () => {
     const { stream, streamTransportUrl, metaTransportUrl, type, id, videoId } = useParams();
@@ -402,6 +532,68 @@ const Player = () => {
         }
     }, [player.nextVideo, isEpg, handleNextVideoNavigation, profile.settings, cancelKeyboardSeek, nextVideo]);
 
+    const seasonEpisodes = React.useMemo(() => {
+        if (isEpg || player.seriesInfo === null || !Array.isArray(metaItemContent?.videos)) {
+            return [];
+        }
+        return metaItemContent.videos
+            .filter((item) => item.season === player.seriesInfo.season)
+            .sort((left, right) => (left.episode || 0) - (right.episode || 0));
+    }, [isEpg, metaItemContent?.videos, player.seriesInfo]);
+
+    const selectedEpisodeId = player.selected?.streamRequest?.path?.id || videoId || '';
+    const selectedEpisodeIndex = seasonEpisodes.findIndex((item) => item.id === selectedEpisodeId);
+    const previousEpisode = selectedEpisodeIndex > 0 ? seasonEpisodes[selectedEpisodeIndex - 1] : null;
+
+    const onEpisodeRequested = React.useCallback(async (episode) => {
+        if (!episode || episode.id === selectedEpisodeId) return;
+        cancelKeyboardSeek();
+
+        const streamRequest = player.selected?.streamRequest;
+        const metaRequest = player.selected?.metaRequest;
+        const currentStream = player.selected?.stream;
+        const currentStreamsUrl = addonResourceUrl(streamRequest, selectedEpisodeId);
+        const targetStreamsUrl = addonResourceUrl(streamRequest, episode.id);
+
+        if (currentStream && streamRequest && metaRequest && targetStreamsUrl) {
+            try {
+                const [currentResponse, targetResponse] = await Promise.all([
+                    currentStreamsUrl ? fetch(currentStreamsUrl) : Promise.resolve(null),
+                    fetch(targetStreamsUrl),
+                ]);
+                const currentPayload = currentResponse?.ok ? await currentResponse.json() : { streams: [] };
+                const targetPayload = targetResponse.ok ? await targetResponse.json() : { streams: [] };
+                const coherentStream = selectCoherentStream(currentStream, currentPayload.streams, targetPayload.streams);
+                if (coherentStream) {
+                    const encodedStream = await core.transport.encodeStream(coherentStream);
+                    const playerPath = [
+                        '/player',
+                        encodeURIComponent(encodedStream),
+                        encodeURIComponent(streamRequest.base),
+                        encodeURIComponent(metaRequest.base),
+                        encodeURIComponent(streamRequest.path.type),
+                        encodeURIComponent(metaRequest.path.id),
+                        encodeURIComponent(episode.id),
+                    ].join('/');
+                    navigate(playerPath, { replace: true });
+                    return;
+                }
+            } catch (error) {
+                console.warn('Remote episode stream matching failed', error);
+            }
+        }
+
+        if (episode.deepLinks?.player) {
+            navigate(toPath(episode.deepLinks.player), { replace: true });
+        } else if (episode.deepLinks?.metaDetailsStreams) {
+            navigate(toPath(episode.deepLinks.metaDetailsStreams), { replace: true });
+        }
+    }, [cancelKeyboardSeek, core.transport, navigate, player.selected, selectedEpisodeId]);
+
+    const onPreviousVideoRequested = React.useCallback(() => {
+        onEpisodeRequested(previousEpisode);
+    }, [onEpisodeRequested, previousEpisode]);
+
     const onVideoClick = React.useCallback(() => {
         if (video.state.paused !== null && !consumePlaybackSpeedHoldClick()) {
             if (video.state.paused) {
@@ -519,6 +711,184 @@ const Player = () => {
             }
         }
     }, [onSeekPrev, onSeekNext, onVolumeUp, onVolumeDown]);
+
+    const remoteSubtitleTracks = React.useMemo(() => {
+        const embedded = (subtitlesMenuProps.subtitlesTracks || [])
+            .map((track, index) => remoteSubtitleTrack(track, 'embedded', index, profile.addons));
+        const external = (subtitlesMenuProps.extraSubtitlesTracks || [])
+            .map((track, index) => remoteSubtitleTrack(track, 'external', index, profile.addons));
+        return embedded.concat(external)
+            .map((track, index) => ({ ...track, originalIndex: index }))
+            .sort((left, right) => {
+                const priority = (track) => {
+                    if (track.source === 'embedded' && track.languageCode === 'pt') return 0;
+                    if (track.source === 'embedded' && track.languageCode === 'en') return 1;
+                    if (track.source === 'external' && track.languageCode === 'pt') return 2;
+                    if (track.source === 'external' && track.languageCode === 'en') return 3;
+                    return track.source === 'embedded' ? 4 : 5;
+                };
+                return priority(left) - priority(right) || left.originalIndex - right.originalIndex;
+            })
+            .map((track) => ({ key: track.key, label: track.label }));
+    }, [profile.addons, subtitlesMenuProps.subtitlesTracks, subtitlesMenuProps.extraSubtitlesTracks]);
+
+    const remoteAudioTracks = React.useMemo(() => {
+        return (video.state.audioTracks || []).map((track, index) => {
+            const locale = subtitleLocale(track);
+            return {
+                key: String(track.id),
+                label: `${locale.language} — ${locale.country} · Track ${index + 1}`,
+            };
+        });
+    }, [video.state.audioTracks]);
+
+    const remoteEpisodes = React.useMemo(() => {
+        return seasonEpisodes.map((episode) => ({
+            key: String(episode.id),
+            label: `S${episode.season || player.seriesInfo?.season || 0}:E${episode.episode || '?'} — ${episode.title || `Episode ${episode.episode || '?'}`}`,
+            title: episode.title || `Episode ${episode.episode || '?'}`,
+            season: episode.season || player.seriesInfo?.season || 0,
+            episode: episode.episode || null,
+            thumbnail: episode.thumbnail || '',
+            overview: episode.overview || '',
+        }));
+    }, [seasonEpisodes, player.seriesInfo?.season]);
+
+    const selectedRemoteSubtitleKey = subtitlesMenuProps.selectedSubtitlesTrackId ?
+        `embedded:${subtitlesMenuProps.selectedSubtitlesTrackId}`
+        :
+        subtitlesMenuProps.selectedExtraSubtitlesTrackId ?
+            `external:${subtitlesMenuProps.selectedExtraSubtitlesTrackId}`
+            :
+            '';
+
+    const remoteState = React.useMemo(() => ({
+        title: player.title || metaItemContent?.name || '',
+        paused: video.state.paused,
+        time: video.state.time,
+        duration: video.state.duration,
+        clockUnit: 'milliseconds',
+        volume: video.state.volume,
+        muted: video.state.muted,
+        canSeek,
+        hasNext: !isEpg && player.nextVideo !== null,
+        hasPrevious: previousEpisode !== null,
+        fullscreen,
+        subtitleTracks: remoteSubtitleTracks,
+        selectedSubtitleKey: selectedRemoteSubtitleKey,
+        audioTracks: remoteAudioTracks,
+        selectedAudioTrackKey: video.state.selectedAudioTrackId === null ? '' : String(video.state.selectedAudioTrackId),
+        episodes: remoteEpisodes,
+        selectedEpisodeKey: selectedEpisodeId,
+    }), [
+        player.title,
+        player.nextVideo,
+        previousEpisode,
+        metaItemContent?.name,
+        video.state.paused,
+        video.state.time,
+        video.state.duration,
+        video.state.volume,
+        video.state.muted,
+        canSeek,
+        isEpg,
+        fullscreen,
+        remoteSubtitleTracks,
+        selectedRemoteSubtitleKey,
+        remoteAudioTracks,
+        video.state.selectedAudioTrackId,
+        remoteEpisodes,
+        selectedEpisodeId,
+    ]);
+
+    const onRemoteCommand = React.useCallback((message) => {
+        switch (message.command) {
+            case 'play_pause':
+                onPlayPause();
+                break;
+            case 'play':
+                onPlayRequested();
+                break;
+            case 'pause':
+                onPauseRequested();
+                break;
+            case 'seek_by':
+                if (canSeek && Number.isFinite(video.state.time)) {
+                    commitSeek(video.state.time + (message.seconds * 1000));
+                }
+                break;
+            case 'seek_to':
+                commitSeek(message.seconds * 1000);
+                break;
+            case 'next':
+                onNextVideoRequested();
+                break;
+            case 'previous':
+                onPreviousVideoRequested();
+                break;
+            case 'volume_by':
+                if (Number.isFinite(video.state.volume)) {
+                    onVolumeChangeRequested(Math.max(0, Math.min(200, video.state.volume + message.amount)));
+                }
+                break;
+            case 'volume_set':
+                onVolumeChangeRequested(message.volume);
+                break;
+            case 'mute':
+                video.state.muted ? onUnmuteRequested() : onMuteRequested();
+                break;
+            case 'fullscreen':
+                toggleFullscreen();
+                break;
+            case 'subtitle_select': {
+                const separator = message.key.indexOf(':');
+                const source = separator === -1 ? '' : message.key.slice(0, separator);
+                const id = separator === -1 ? '' : message.key.slice(separator + 1);
+                if (!source) {
+                    subtitlesMenuProps.onSubtitlesTrackSelected(null);
+                } else if (source === 'embedded') {
+                    const track = subtitlesMenuProps.subtitlesTracks.find((item) => String(item.id) === id);
+                    if (track) subtitlesMenuProps.onSubtitlesTrackSelected(track);
+                } else if (source === 'external') {
+                    const track = subtitlesMenuProps.extraSubtitlesTracks.find((item) => String(item.id) === id);
+                    if (track) subtitlesMenuProps.onExtraSubtitlesTrackSelected(track);
+                }
+                break;
+            }
+            case 'audio_select': {
+                const track = video.state.audioTracks.find((item) => String(item.id) === message.key);
+                if (track) onAudioTrackSelected(track.id);
+                break;
+            }
+            case 'episode_select': {
+                const episode = seasonEpisodes.find((item) => String(item.id) === message.key);
+                if (episode) onEpisodeRequested(episode);
+                break;
+            }
+        }
+    }, [
+        onPlayPause,
+        onPlayRequested,
+        onPauseRequested,
+        canSeek,
+        video.state.time,
+        video.state.volume,
+        video.state.muted,
+        commitSeek,
+        onNextVideoRequested,
+        onPreviousVideoRequested,
+        onVolumeChangeRequested,
+        onUnmuteRequested,
+        onMuteRequested,
+        toggleFullscreen,
+        subtitlesMenuProps,
+        video.state.audioTracks,
+        onAudioTrackSelected,
+        seasonEpisodes,
+        onEpisodeRequested,
+    ]);
+
+    useRemoteControl(remoteState, onRemoteCommand);
 
     useContentGamepadNavigation(playerRef, GAMEPAD_HANDLER_ID);
 

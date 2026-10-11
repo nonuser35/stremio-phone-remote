@@ -1,0 +1,10 @@
+Bundled Stremio Desktop
+=======================
+
+Binary version: 5.0.26 (Windows x64)
+Official shell project: https://github.com/Stremio/stremio-shell-ng
+Official website: https://www.stremio.com/
+
+The release package contains program files only. It does not contain a WebView2
+profile, login, history, addons, cache, or any other personal data. Each user
+creates and retains a separate local profile when the application first runs.

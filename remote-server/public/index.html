@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#151020">
+    <title>Stremio Remote</title>
+    <link rel="manifest" href="/remote/manifest.webmanifest">
+    <link rel="stylesheet" href="/remote/styles.css?v=12">
+</head>
+<body>
+    <main class="app">
+        <section id="pairing" class="card pairing">
+            <div class="brand">STREMIO REMOTE</div>
+            <h1>Connect to the player</h1>
+            <p>Open this address in a browser on a phone connected to the same Wi-Fi network as the computer. Enter the six-digit PIN shown in Stremio Phone Remote once.</p>
+            <form id="pair-form">
+                <label for="pin">PIN</label>
+                <input id="pin" name="pin" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="000000" required>
+                <button class="primary" type="submit">Pair phone</button>
+                <output id="pair-error" class="error" aria-live="polite"></output>
+            </form>
+        </section>
+
+        <section id="controller" class="controller hidden" aria-live="polite">
+            <header>
+                <div>
+                    <div class="brand">STREMIO REMOTE</div>
+                <div id="connection" class="connection offline">Disconnected</div>
+                </div>
+                <button id="forget" class="icon-button" title="Unpair this phone" aria-label="Unpair this phone">×</button>
+            </header>
+
+            <section class="now-playing card">
+                <div class="eyebrow">NOW PLAYING</div>
+                <h1 id="title">Open a video in Stremio</h1>
+                <div class="timeline">
+                    <input id="timeline" type="range" min="0" max="1" value="0" step="0.1" aria-label="Video position">
+                    <div class="times"><span id="current-time">00:00</span><span id="duration">00:00</span></div>
+                </div>
+            </section>
+
+            <section class="transport" aria-label="Playback controls">
+                <button data-command="seek_by" data-seconds="-10" aria-label="Go back ten seconds"><span>↶</span><small>10s</small></button>
+                <button id="play-pause" class="play" data-command="play_pause" aria-label="Play or pause">▶</button>
+                <button data-command="seek_by" data-seconds="10" aria-label="Go forward ten seconds"><span>↷</span><small>10s</small></button>
+            </section>
+
+            <section class="card episodes-card">
+                <details id="episode-picker" class="episode-picker">
+                    <summary>
+                        <span>
+                            <small>EPISODES</small>
+                            <strong id="episode-summary">View season episodes</strong>
+                        </span>
+                        <span class="summary-chevron" aria-hidden="true">⌄</span>
+                    </summary>
+                    <div id="episode-list" class="episode-list">
+                        <div class="episode-empty">No episode list available</div>
+                    </div>
+                </details>
+                <div class="episode-navigation">
+                    <button id="previous" class="secondary compact" data-command="previous">⏮ Previous</button>
+                    <button id="next" class="secondary compact" data-command="next">Next ⏭</button>
+                </div>
+            </section>
+
+            <section class="card settings">
+                <div class="setting-row">
+                    <button id="mute" class="icon-button" data-command="mute" aria-label="Mute or unmute">🔊</button>
+                    <input id="volume" type="range" min="0" max="200" value="100" step="1" aria-label="Volume">
+                    <span id="volume-label">100%</span>
+                </div>
+                <div class="select-heading">
+                    <label class="select-label" for="subtitles">Subtitles</label>
+                    <button id="refresh-subtitles" class="text-button" type="button">Refresh list</button>
+                </div>
+                <select id="subtitles">
+                    <option value="">Off</option>
+                </select>
+                <div id="subtitle-status" class="setting-hint">Addon subtitles appear here automatically.</div>
+                <label class="select-label" for="audio-tracks">Audio language</label>
+                <select id="audio-tracks">
+                    <option value="">Default audio</option>
+                </select>
+                <button class="secondary" data-command="fullscreen">Toggle fullscreen</button>
+            </section>
+        </section>
+    </main>
+    <script src="/remote/app.js?v=12"></script>
+</body>
+</html>

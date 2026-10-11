@@ -7,6 +7,7 @@
 - Added coherent stream matching for direct episode selection.
 - Added persistent paired devices and local device revocation.
 - Added a native Windows dashboard, QR code, pairing PIN, and installer.
+- Added an installer-managed Windows Firewall rule for TCP port 9100 on private networks so phones, including iPhones, can reach the remote.
 - Added support for a bundled Node.js runtime and portable Stremio Desktop files.
 - Fixed the pairing PIN being obscured by connection instructions.
 - Prevented multiple dashboard instances from competing for the same relay.

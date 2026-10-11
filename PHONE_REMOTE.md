@@ -4,8 +4,8 @@
 
 1. Extract the complete release ZIP.
 2. Run `Install Stremio Remote.exe`.
-3. Open **Stremio Remote** from the desktop shortcut.
-4. If Windows Firewall prompts for `node.exe`, allow it only on private networks.
+3. Approve the Windows administrator prompt that allows TCP port `9100` for the bundled Node.js runtime on private networks only.
+4. Open **Stremio Remote** from the desktop shortcut.
 
 The release package includes the local Node.js runtime and a clean portable copy of Stremio Desktop. No separate Stremio or Node.js installation is required.
 
@@ -25,4 +25,6 @@ The distributed ZIP must not contain a `stremio-shell-ng.exe.WebView2` directory
 
 - If the player does not connect, close any other Stremio installation and click **Open Stremio**.
 - If the phone cannot open the link, confirm both devices are on the same private network and that the firewall allows the bundled Node.js runtime.
+- Guest Wi-Fi and access-point isolation prevent devices on the same Wi-Fi name from reaching each other. Use a normal private home network instead.
+- If the firewall approval was cancelled during installation, run the installer again and approve it.
 - Do not forward the remote ports on the router or expose them to the public internet.

@@ -556,7 +556,7 @@ const renderDashboard = (includeQr = false, message = '') => {
         console.log('   No paired devices yet.');
     } else {
         devices.forEach((device, index) => {
-            console.log(`   ${index + 1}. ${device.name} - ${online.has(device.id) ? 'ONLINE' : `visto em ${formatLastSeen(device.lastSeenAt)}`}`);
+            console.log(`   ${index + 1}. ${device.name} - ${online.has(device.id) ? 'ONLINE' : `last seen ${formatLastSeen(device.lastSeenAt)}`}`);
         });
     }
     console.log('');
